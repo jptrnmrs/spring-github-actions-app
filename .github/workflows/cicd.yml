@@ -1,4 +1,5 @@
 name: Java CI/CD with Gradle
+
 on:
   push:
     branches:
@@ -6,8 +7,7 @@ on:
   pull_request:
     branches:
       - main
-env:
-  JAR_FILE: spring-github-actions-app-0.0.1-SNAPSHOT.jar
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,11 +24,15 @@ jobs:
         uses: gradle/gradle-build-action@v2.6.0
         with:
           arguments: build
+      - name: Set JAR_FILE environment variable
+        id: set-jar-file
+        run: echo "JAR_FILE=$(ls build/libs/*.jar | xargs -n 1 basename)" >> $GITHUB_ENV
       - name: Upload build artifact
         uses: actions/upload-artifact@v3
         with:
           name: app
           path: build/libs/${{ env.JAR_FILE }}
+          
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -49,7 +53,7 @@ jobs:
             build/libs/${{ env.JAR_FILE }} \
             ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }}:/home/${{ secrets.AWS_EC2_USER }}/
       - name: Restart Spring Application on EC2
-        run: >
+        run: |
           ssh -i private_key.pem \
             -o StrictHostKeyChecking=no \
             ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << 'EOF'
