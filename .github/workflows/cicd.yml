@@ -27,7 +27,7 @@ jobs:
       - name: Set JAR_FILE environment variable
         id: set-jar-file
         run: |
-          JAR_FILE=$(ls build/libs/*.jar | xargs -n 1 basename)
+          JAR_FILE=$(ls build/libs/*.jar | xargs -n 1 basename | sed -z 's/\n//g')
           echo "JAR_FILE=$JAR_FILE" >> $GITHUB_ENV
       - name: Upload build artifact
         uses: actions/upload-artifact@v3
