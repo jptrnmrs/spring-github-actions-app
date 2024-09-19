@@ -29,22 +29,19 @@ jobs:
         run: |
           JAR_FILE=$(ls build/libs/*.jar | xargs -n 1 basename | sed -z 's/\n//g')
           echo "JAR_FILE=$JAR_FILE" >> $GITHUB_ENV
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: app
-          path: build/libs/${{ env.JAR_FILE }}
-          
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
+      - name: List build/libs directory
+        run: ls -la build/libs
+        
       - name: Upload build artifact
         uses: actions/upload-artifact@v3
         with:
           name: app
           path: build/libs/*.jar
-      
+          
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Download build artifact
         uses: actions/download-artifact@v3
         with:
