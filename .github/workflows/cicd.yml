@@ -50,6 +50,8 @@ jobs:
         run: |
           echo "${{ secrets.AWS_EC2_KEY }}" > private_key.pem
           chmod 600 private_key.pem
+      - name: List current directory
+        run: ls -la
       - name: Copy JAR to EC2
         run: |
           scp -i private_key.pem \
