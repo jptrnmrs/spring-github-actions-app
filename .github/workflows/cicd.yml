@@ -1,5 +1,4 @@
 name: Java CI/CD with Gradle
-
 on:
   push:
     branches:
@@ -7,6 +6,9 @@ on:
   pull_request:
     branches:
       - main
+
+env:
+  JAR_FILE: sboard-0.0.1-SNAPSHOT.jar
 
 jobs:
   build:
@@ -24,52 +26,74 @@ jobs:
         uses: gradle/gradle-build-action@v2.6.0
         with:
           arguments: build
-      - name: Set JAR_FILE environment variable
-        id: set-jar-file
-        run: |
-          JAR_FILE=$(basename build/libs/*.jar)
-          echo "JAR_FILE=${JAR_FILE}"
-          echo "JAR_FILE=${JAR_FILE}" >> $GITHUB_ENV
-      - name: List build/libs directory
-        run: ls -la build/libs
       - name: Upload build artifact
         uses: actions/upload-artifact@v3
         with:
           name: app
-          path: build/libs/*.jar
-          
+          path: build/libs/${{ env.JAR_FILE }}
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Get GitHub Actions IP
+        id: ip
+        uses: haythem/public-ip@v1.2
+        
+      - name: Setting environment variables
+        run: |
+          echo "AWS_DEFAULT_REGION=ap-northeast-2" >> $GITHUB_ENV
+          echo "AWS_SG_NAME=launch-wizard-2" >> $GITHUB_ENV
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }} 
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }} 
+          aws-region: ap-northeast-2
+
+      - name: Add GitHub Actions IP to Security group
+        run: |
+          aws ec2 authorize-security-group-ingress --group-name ${{ env.AWS_SG_NAME }} --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.ipv4 }}/32    
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-2
+
       - name: Download build artifact
         uses: actions/download-artifact@v3
         with:
           name: app
+          path: build/libs/
+
       - name: Setup SSH Key
         run: |
           echo "${{ secrets.AWS_EC2_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-      - name: List current directory
-        run: ls -la
-      - name: Display JAR_FILE
-        run: echo "JAR_FILE=${JAR_FILE}"
+          chmod 400 private_key.pem
+
       - name: Copy JAR to EC2
         run: |
           scp -i private_key.pem \
             -o StrictHostKeyChecking=no \
             build/libs/${{ env.JAR_FILE }} \
             ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }}:/home/${{ secrets.AWS_EC2_USER }}/
-  
+
       - name: Restart Spring Application on EC2
         run: |
           ssh -i private_key.pem \
             -o StrictHostKeyChecking=no \
-            ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << EOF
-            # Kill any existing Java processes
-            pkill -f 'java -jar'
-            # Start the new Java process
-            nohup java -jar /home/${{ secrets.AWS_EC2_USER }}/${{ env.JAR_FILE }} > /home/${{ secrets.AWS_EC2_USER }}/app.log 2>&1 &
+            ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << 'EOF'
+            pgrep java | xargs kill -9
+            nohup java -jar /home/${{ secrets.AWS_EC2_USER }}/${{ env.JAR_FILE }} > app.log 2>&1 &
           EOF
+
+      - name: Remove GitHub Actions IP from security group
+        run: |
+          aws ec2 revoke-security-group-ingress --group-name ${{ env.AWS_SG_NAME }} --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.ipv4 }}/32
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-2
+
       - name: Cleanup
         run: rm -f private_key.pem
